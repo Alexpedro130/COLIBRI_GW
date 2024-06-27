@@ -399,8 +399,8 @@ class limber():
                     
 # Define the gravitational waves lensing window function
 
-    def load_gw_lensing_window_functions(self, z, ndl, H_0, omega_m, beta, name = 'lensing_GW'):
-        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m)
+    def load_gw_lensing_window_functions(self, z, ndl, H_0, omega_m, omega_b, beta, name = 'lensing_GW'):
+        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
                 
         ndl = np.array(ndl)
         z  = np.array(z)
@@ -660,9 +660,9 @@ class limber():
     #-----------------------------------------------------------------------------------------
     # GRAVITATIONAL WAVES WINDOW FUNCTION
     #-----------------------------------------------------------------------------------------
-    def load_gravitational_wave_window_functions(self, z, ndl, H_0, omega_m, bias = 1.0, name = 'GW'):
+    def load_gravitational_wave_window_functions(self, z, ndl, H_0, omega_m, omega_b, bias = 1.0, name = 'GW'):
         
-        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m)
+        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
         
 
         ndl = np.array(ndl)
