@@ -443,6 +443,8 @@ class limber():
         norm_const = sint.simps(nz, x = z, axis = 1)
         constant = 3./2.*self.cosmology.Omega_m*(self.cosmology.H0/const.c)**2.*(1.+self.z_windows)*self.geometric_factor_windows
 
+        s=0
+
         # Initialize window
         self.window_function[name]  = []
         # Set windows
@@ -453,7 +455,7 @@ class limber():
             n_z_array  = tmp_interp(self.z_windows)
             n_z_interp = si.interp1d(self.geometric_factor_windows, n_z_array*(self.Hubble_windows/const.c), 'cubic', bounds_error = False, fill_value = 0.)
             # Do the integral for window function
-            integral = list(map(lambda chi_i: sint.quad(lambda chi: n_z_interp(chi)*(1.-chi_i/chi), chi_i, chi_max, epsrel = 1.e-3)[0], self.geometric_factor_windows))
+            integral = list(map(lambda chi_i: sint.quad(lambda chi: 0.5*(5*s-2)*n_z_interp(chi)*(1.-chi_i/chi), chi_i, chi_max, epsrel = 1.e-3)[0], self.geometric_factor_windows))
             # Fill temporary window functions with real values
             window_function_tmp    = constant*integral/norm_const[galaxy_bin]
             # Interpolate (the Akima interpolator avoids oscillations around the zero due to the cubic spline)
