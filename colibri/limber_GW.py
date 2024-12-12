@@ -939,7 +939,7 @@ class limber():
         PS_lz = np.zeros((n_l, n_z))
         for il in xrange(n_l):
             for iz in range(n_z):
-                PS_lz[il,iz] = power_spectra(l[il]/self.geometric_factor[iz], zz[iz])
+                PS_lz[il,iz] = power_spectra((l[il]+0.5)/self.geometric_factor[iz], zz[iz])
         # Add curvature correction (see arXiv:2302.04507)
         if self.cosmology.K != 0.:
             KK = self.cosmology.K
@@ -1014,7 +1014,7 @@ class limber():
         n_l      = len(np.atleast_1d(l))
         n_z      = self.nz_integration
 
-        zz = np.linspace(0.001, 7, 10)
+        zz = np.linspace(0.001, 7, 30)
         n_z = 10
 
         Cl       = {}
@@ -1084,11 +1084,10 @@ class limber():
                 P_s = []
                 for i in range(len(x)):
                     z2_array = z2[:,i]
-                    P_s.append(power_spectra(ll / r(z2_array), z2_array))
+                    P_s.append(power_spectra((ll+0.5) / r(z2_array), z2_array))
                 P_s = np.array(P_s)
-                return A_L_X(x, tracer1, r(z1)) * A_L_Y(x, tracer2, r(z2)) * (1 + x)**2 / (H(x) * r(x)**2) * P_s
-            
-            z_grid = np.linspace(0.001, z2, 10)
+                return A_L_X(x, tracer1, r(z1)) * A_L_Y(x, tracer2, r(z2)) * (1 + x)**2 / H(x) * r(x)**2 * P_s
+            z_grid = np.linspace(0.001, z2, 30)
             integrand_values = np.array(inner_integrand(z_grid))
             return (1/r(z1))*(1/r(z2))*sint.simps(integrand_values, x=z_grid)
         
@@ -1097,7 +1096,7 @@ class limber():
             def integrand_second(x):
                 return first_int(z1, x, ll) * W_Y[bin_j] * J2(tracer2, x)
             
-            z_grid = np.linspace(0.001, z1, 10)
+            z_grid = np.linspace(0.001, z1, 30)
             integrand_values = np.array(integrand_second(z_grid))
             return sint.simps(integrand_values, x=z_grid)
         
@@ -1126,7 +1125,7 @@ class limber():
                             for ell in range(n_l):
                                 integrand = third_int(l[ell], bin_i, bin_j)
                                 ll = l[ell]
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell] = ll**2*(ll+1)**2*sint.simps(integrand, x = zz)
+                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell] = ll**2*(ll+1)**2/((ll+0.5)**4)*sint.simps(integrand, x = zz)
                                 Cl['%s-%s' %(key_X,key_Y)][bin_j,bin_i,ell] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
                 # Symmetry C_{AB}^{ij} == C_{BA}^{ji}
                 else:
@@ -1135,7 +1134,7 @@ class limber():
                             for ell in range(n_l):
                                 integrand = third_int(l[ell], bin_i, bin_j)
                                 ll = l[ell]
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = ll**2*(ll+1)**2*sint.simps(integrand, x = zz)
+                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = ll**2*(ll+1)**2/((ll+0.5)**4)*sint.simps(integrand, x = zz)
                                 Cl['%s-%s' %(key_Y,key_X)][bin_j,bin_i] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
         return Cl
 
@@ -1183,7 +1182,7 @@ class limber():
         n_l      = len(np.atleast_1d(l))
         n_z      = self.nz_integration
 
-        zz = np.linspace(0.001, 7, 10)
+        zz = np.linspace(0.001, 7, 30)
         n_z = 10
 
         Cl       = {}
@@ -1243,10 +1242,10 @@ class limber():
                 for i in range(len(x)):
                     for j in range(len(x)):
                         z1_array = z_grid[:,i]
-                        P_s[j,i]=power_spectra(ll / r(z1_array[j]), z1_array[j])
-                return A_L_Y(x, tracer2, r(z1)) * W_Y[bin_j] * J2(tracer2, x) * (1 + x) / (r(x)**2) * P_s
+                        P_s[j,i]=power_spectra((ll+0.5) / r(z1_array[j]), z1_array[j])
+                return A_L_Y(x, tracer2, r(z1)) * W_Y[bin_j] * J2(tracer2, x) * (1 + x) * P_s
             
-            z_grid = np.linspace(0.001, z1, 10)
+            z_grid = np.linspace(0.001, z1, 30)
             integrand_values = np.array(inner_integrand(z_grid))
             return (1/r(z1))*sint.simps(integrand_values, x=z_grid)
         
@@ -1275,7 +1274,7 @@ class limber():
                             for ell in range(n_l):
                                 ll = l[ell]
                                 integrand = second_int(l[ell], bin_i, bin_j)
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell] = -ll*(ll+1)*sint.simps(integrand, x = zz)
+                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell] = -ll*(ll+1)/((ll+0.5)**2)*sint.simps(integrand, x = zz)
                                 Cl['%s-%s' %(key_X,key_Y)][bin_j,bin_i,ell] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
                 # Symmetry C_{AB}^{ij} == C_{BA}^{ji}
                 else:
@@ -1284,7 +1283,7 @@ class limber():
                             for ell in range(n_l):
                                 integrand = second_int(l[ell], bin_i, bin_j)
                                 ll = l[ell]
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = -ll*(ll+1)*sint.simps(integrand, x = zz)
+                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = -ll*(ll+1)/((ll+0.5)**2)*sint.simps(integrand, x = zz)
                                 Cl['%s-%s' %(key_Y,key_X)][bin_j,bin_i] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
         return Cl
 
