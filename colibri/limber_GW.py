@@ -1014,7 +1014,7 @@ class limber():
         n_l      = len(np.atleast_1d(l))
         n_z      = self.nz_integration
 
-        zz = np.linspace(0.001, 7, 30)
+        zz = np.linspace(0.001, 7, 20)
         n_z = 10
 
         Cl       = {}
@@ -1087,7 +1087,7 @@ class limber():
                     P_s.append(power_spectra((ll+0.5) / r(z2_array), z2_array))
                 P_s = np.array(P_s)
                 return A_L_X(x, tracer1, r(z1)) * A_L_Y(x, tracer2, r(z2)) * (1 + x)**2 / H(x) * r(x)**2 * P_s
-            z_grid = np.linspace(0.001, z2, 30)
+            z_grid = np.linspace(0.001, z2, 20)
             integrand_values = np.array(inner_integrand(z_grid))
             return (1/r(z1))*(1/r(z2))*sint.simps(integrand_values, x=z_grid)
         
@@ -1096,7 +1096,7 @@ class limber():
             def integrand_second(x):
                 return first_int(z1, x, ll) * W_Y[bin_j] * J2(tracer2, x)
             
-            z_grid = np.linspace(0.001, z1, 30)
+            z_grid = np.linspace(0.001, z1, 20)
             integrand_values = np.array(integrand_second(z_grid))
             return sint.simps(integrand_values, x=z_grid)
         
@@ -1182,7 +1182,7 @@ class limber():
         n_l      = len(np.atleast_1d(l))
         n_z      = self.nz_integration
 
-        zz = np.linspace(0.001, 7, 30)
+        zz = np.linspace(0.001, 7, 20)
         n_z = 10
 
         Cl       = {}
@@ -1245,7 +1245,7 @@ class limber():
                         P_s[j,i]=power_spectra((ll+0.5) / r(z1_array[j]), z1_array[j])
                 return A_L_Y(x, tracer2, r(z1)) * W_Y[bin_j] * J2(tracer2, x) * (1 + x) * P_s
             
-            z_grid = np.linspace(0.001, z1, 30)
+            z_grid = np.linspace(0.001, z1, 20)
             integrand_values = np.array(inner_integrand(z_grid))
             return (1/r(z1))*sint.simps(integrand_values, x=z_grid)
         
