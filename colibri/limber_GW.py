@@ -406,9 +406,9 @@ class limber():
         z  = np.array(z)
         n_bins = len(ndl)
 
-        dl_grid = conversion.luminosity_distance(z).value
+        dl_grid = conversion.luminosity_distance(z).value/1000
         
-        norm_const = sint.simps(ndl, x = z, axis = 1)
+        norm_const = sint.simps(ndl, x = dl_grid, axis = 1)
         
         constant = 3.*omega_m*(H_0/const.c)**2.
         
@@ -1082,11 +1082,11 @@ class limber():
         def first_int(z1, z2, ll):
             def inner_integrand(x):
                 P_s = []
-                for i in range(len(x)):
+                for i in range(z2.shape[1]):
                     z2_array = z2[:,i]
                     P_s.append(power_spectra((ll+0.5) / r(z2_array), z2_array))
                 P_s = np.array(P_s)
-                return A_L_X(x, tracer1, r(z1)) * A_L_Y(x, tracer2, r(z2)) * (1 + x)**2 / H(x) * r(x)**2 * P_s
+                return const.c * A_L_X(x, tracer1, r(z1)) * A_L_Y(x, tracer2, r(z2)) * (1 + x)**2 / H(x) * r(x)**2 * P_s
             z_grid = np.linspace(0.001, z2, 20)
             integrand_values = np.array(inner_integrand(z_grid))
             return (1/r(z1))*(1/r(z2))*sint.simps(integrand_values, x=z_grid)
