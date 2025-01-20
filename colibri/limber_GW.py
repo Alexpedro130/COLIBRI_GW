@@ -11,7 +11,7 @@ from math import sqrt
 from astropy import units as u
 import astropy.cosmology.units as cu
 import matplotlib.pyplot as plt
-
+from scipy.integrate import trapz
 
 from astropy.cosmology import FlatLambdaCDM
 from sklearn import preprocessing
@@ -89,7 +89,7 @@ class limber():
 
         # Initialize window functions
         self.window_function = {}
-
+        self.bin_edges = {}
 
     #-----------------------------------------------------------------------------------------
     # LOAD_PK
@@ -123,6 +123,12 @@ class limber():
                                                       kind_of_interpolation,
                                                       bounds_error = False, fill_value = 0.)
 
+    
+    def load_bin_edges(self, bin_edges_1, bin_edges_2, name_1='galaxy', name_2='GW'):
+        self.bin_edges[name_1] = bin_edges_1
+        self.bin_edges[name_2] = bin_edges_2
+
+    
     #-----------------------------------------------------------------------------------------
     # EXAMPLES OF GALAXY PDF'S
     #-----------------------------------------------------------------------------------------
@@ -263,7 +269,7 @@ class limber():
         return np.exp(exponent)
 
 
-    def constant_distribution(z, zmin, zmax, step = 5e-3):
+    def constant_distribution( z, zmin, zmax, step = 5e-3):
         """
         Example function for the distribution of source galaxy. Here we use a constant distribution of sources.
 
@@ -281,6 +287,7 @@ class limber():
 
         :return: array
         """
+        
         # Heaviside-like function
         lower = 0.5*(1.+np.tanh((z-zmin)/step))
         upper = 0.5*(1.+np.tanh((zmax-z)/step))
@@ -399,14 +406,18 @@ class limber():
                     
 # Define the gravitational waves lensing window function
 
-    def load_gw_lensing_window_functions(self, z, ndl, H_0, omega_m, omega_b, name = 'lensing_GW'):
+    def load_gw_lensing_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, name = 'lensing_GW'):
+
         conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
-                
-        ndl = np.array(ndl)
-        z  = np.array(z)
+        
+        #LL=limber()
+        
+        z  = np.array(z)       
+        #ndl = np.array(ndl)
+        
         n_bins = len(ndl)
 
-        dl_grid = conversion.luminosity_distance(z).value/1000
+        dl_grid = conversion.luminosity_distance(z).value
         
         norm_const = sint.simps(ndl, x = dl_grid, axis = 1)
         
@@ -420,9 +431,11 @@ class limber():
             n_z_interp = si.interp1d(z, ndl[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.)
             self.window_function[name].append(si.interp1d(self.z_integration, constant*n_z_interp(self.z_integration)/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
 
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
 
 
-    def load_galaxy_lensing_window_functions(self, z, nz, H_0, omega_m, name = 'galaxy_lensing'):
+
+    def load_galaxy_lensing_window_functions(self, z, nz, H_0, omega_m, ll, name = 'galaxy_lensing'):
         constant = 3.*omega_m*(H_0/const.c)**2.
         nz = np.array(nz)
         z  = np.array(z)
@@ -434,6 +447,8 @@ class limber():
         for galaxy_bin in xrange(n_bins):
             tmp_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
             self.window_function[name].append(si.interp1d(self.z_integration, constant*tmp_interp(self.z_integration)/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
+
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
 
                     
     def load_shear_window_functions_flat(self, z, nz, name = 'shear'):
@@ -597,7 +612,7 @@ class limber():
     #-----------------------------------------------------------------------------------------
     # GALAXY CLUSTERING WINDOW FUNCTION
     #-----------------------------------------------------------------------------------------
-    def load_galaxy_clustering_window_functions(self, z, nz, bias = 1.0, name = 'galaxy'):
+    def load_galaxy_clustering_window_functions(self, z, nz, ll, bias = 1.0, name = 'galaxy'):
         """
         This function computes the window function for galaxy clustering given a galaxy distribution.
         The function automatically normalizes the galaxy distribution such that the integral over
@@ -654,12 +669,16 @@ class limber():
         # Compute window
         for galaxy_bin in xrange(n_bins):
             tmp_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            #to_append = si.interp1d(self.z_integration, tmp_interp(self.z_integration)*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.)
             self.window_function[name].append(si.interp1d(self.z_integration, tmp_interp(self.z_integration)*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
+            
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))          
+
             
     #-----------------------------------------------------------------------------------------
     # GRAVITATIONAL WAVES WINDOW FUNCTION
     #-----------------------------------------------------------------------------------------
-    def load_gravitational_wave_window_functions(self, z, ndl, H_0, omega_m, omega_b, bias = 1.0, name = 'GW'):
+    def load_gravitational_wave_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, bias = 1.0, name = 'GW'):
         
         conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
         
@@ -685,6 +704,103 @@ class limber():
             tmp_interp = si.interp1d(z,ndl[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
             self.window_function[name].append(si.interp1d(self.z_integration, tmp_interp(self.z_integration)*((1+self.z_integration)*const.c/self.Hubble+(conversion.luminosity_distance(self.z_integration).value)/(1+self.z_integration))*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
 
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
+
+
+    #-----------------------------------------------------------------------------------------
+    # RSD WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+
+    def load_rsd_window_functions(self, z, nz, H_0, omega_m, omega_b, ll, name = 'RSD'):
+        
+        cosmo = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
+
+        nz = np.array(nz)
+        z  = np.array(z)
+        n_bins = len(nz)
+        norm_const = sint.simps(nz, x = z, axis = 1)
+        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
+        assert nz.ndim == 2, "'nz' must be 2-dimensional" 
+        assert (nz.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
+        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
+        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
+
+        def L0 (ll):
+            return (2*ll**2+2*ll-1)/((2*ll-1)*(2*ll+3))
+        def Lm1 (ll):
+            return -ll*(ll-1)/((2*ll-1)*np.sqrt((2*ll-3)*(2*ll+1)))
+        def Lp1 (ll):
+            return -(ll-1)*(ll+2)/((2*ll+3)*np.sqrt((2*ll+1)*(2*ll+5)))
+
+        # Initialize window
+        self.window_function[name] = []
+        # Compute window
+        for galaxy_bin in xrange(n_bins):
+
+            nz_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            f_interp = si.interp1d(z,cosmo.Om(z)**0.55,'cubic', bounds_error = False, fill_value = 0.)
+
+            def Wm1 (ll):
+                return Lm1(ll)*nz_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)
+            def Wz (ll):
+                return L0(ll)*nz_interp(((2*ll+1)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1)/(2*ll+1))*self.z_integration)
+            def Wp1 (ll):
+                return Lp1(ll)*nz_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)
+
+
+            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
+
+        self.window_function[name]=np.array(self.window_function[name])
+
+        
+
+
+            
+    #-----------------------------------------------------------------------------------------
+    # LSD WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+    def load_lsd_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, name = 'LSD'):
+        
+        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
+        
+
+        ndl = np.array(ndl)
+        z  = np.array(z)
+        n_bins = len(ndl)
+        
+        norm_const = sint.simps(ndl, x = conversion.luminosity_distance(z).value, axis = 1)
+        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
+        assert ndl.ndim == 2, "'nz' must be 2-dimensional" 
+        assert (ndl.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
+        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
+        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
+
+        def L0 (ll):
+            return (2*ll**2+2*ll-1)/((2*ll-1)*(2*ll+3))
+        def Lm1 (ll):
+            return -ll*(ll-1)/((2*ll-1)*np.sqrt((2*ll-3)*(2*ll+1)))
+        def Lp1 (ll):
+            return -(ll-1)*(ll+2)/((2*ll+3)*np.sqrt((2*ll+1)*(2*ll+5)))
+
+        # Initialize window
+        self.window_function[name] = []
+        # Compute window
+        for galaxy_bin in xrange(n_bins):
+
+            nz_interp = si.interp1d(z, ndl[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            f_interp = si.interp1d(z, conversion.Om(z)**0.55,'cubic', bounds_error = False, fill_value = 0.)
+
+            def Wm1 (ll):
+                return Lm1(ll)*nz_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)
+            def Wz (ll):
+                return L0(ll)*nz_interp(((2*ll+1)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1)/(2*ll+1))*self.z_integration)
+            def Wp1 (ll):
+                return Lp1(ll)*nz_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)
+
+
+            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*((1+self.z_integration)*const.c/self.Hubble+(conversion.luminosity_distance(self.z_integration).value)/(1+self.z_integration))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
+
+        self.window_function[name]=np.array(self.window_function[name])
 
     #-----------------------------------------------------------------------------------------
     # HI WINDOW FUNCTION
@@ -952,39 +1068,30 @@ class limber():
         # 1st key (from 1 to N_keys)
         for index_X in xrange(nkeys):
             key_X = list(keys)[index_X]
-            W_X = np.array([windows_to_use[key_X][i](zz) for i in range(n_bins[index_X])])
+            W_X = np.array([[windows_to_use[key_X][i,j](zz) for j in range(n_l)] for i in range(n_bins[index_X])])
             # 2nd key (from 1st key to N_keys)
             for index_Y in xrange(index_X,nkeys):
                 key_Y = list(keys)[index_Y]
-                W_Y = np.array([windows_to_use[key_Y][i](zz) for i in range(n_bins[index_Y])])
+                W_Y = np.array([[windows_to_use[key_Y][i,j](zz) for j in range(n_l)] for i in range(n_bins[index_Y])])
                 # Symmetry C_{AA}^{ij} == C_{AA}^{ji}
                 if key_X == key_Y:
                     for bin_i in xrange(n_bins[index_X]):
                         for bin_j in xrange(bin_i, n_bins[index_Y]):
-                            Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = [sint.simps(cH_chi2*W_X[bin_i]*W_Y[bin_j]*PS_lz[xx], x = zz) for xx in range(n_l)]
+                            Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = [sint.simps(cH_chi2*W_X[bin_i,xx]*W_Y[bin_j,xx]*PS_lz[xx], x = zz) for xx in range(n_l)]
                             Cl['%s-%s' %(key_X,key_Y)][bin_j,bin_i] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j]
                 # Symmetry C_{AB}^{ij} == C_{BA}^{ji}
                 else:
                     for bin_i in xrange(n_bins[index_X]):
                         for bin_j in xrange(n_bins[index_Y]):
-                            Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = [sint.simps(cH_chi2*W_X[bin_i]*W_Y[bin_j]*PS_lz[xx], x = zz) for xx in range(n_l)]
+                            Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = [sint.simps(cH_chi2*W_X[bin_i,xx]*W_Y[bin_j,xx]*PS_lz[xx], x = zz) for xx in range(n_l)]
                             Cl['%s-%s' %(key_Y,key_X)][bin_j,bin_i] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j]
         return Cl
     
 
-    def limber_angular_power_spectra_lensing_auto(self, l, tracer1, tracer2, s_gal, beta, H_0, omega_m, omega_b, windows = None):
+    def limber_angular_power_spectra_lensing_auto(self, l,  s_gal, beta, H_0, omega_m, omega_b, windows = None, npoints=20, npoints_x=20, grid_x='mix', nlow=5, nhigh=5, Deltaz=0.05, zmin=1e-05):
 
         cosmo = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
 
-        if tracer1 == 'galaxy':
-            bias1 = s_gal
-        else:
-            bias1 = beta
-        
-        if tracer2 == 'galaxy':
-            bias2 = s_gal
-        else:
-            bias2 = beta
 
         # Check existence of power spectrum
         try: self.power_spectra_interpolator
@@ -1007,69 +1114,49 @@ class limber():
         keys   = windows_to_use.keys()
         if len(keys) == 0: raise AttributeError("No window function has been computed!")
         nkeys  = len(keys)
+        print('List of window functions used:')
+        print(keys)
         n_bins = [len(windows_to_use[key]) for key in keys]
-
+        print('N of bins for each case:')
+        print(n_bins)
+        
         # 1) Define lengths and quantities
-        zz       = self.z_integration
+        #zz       = self.z_integration
         n_l      = len(np.atleast_1d(l))
-        n_z      = self.nz_integration
-
-        zz = np.linspace(0.001, 7, 20)
-        n_z = 10
+        #n_z      = self.nz_integration # this is now npoints
 
         Cl       = {}
         for i,ki in enumerate(keys):
             for j,kj in enumerate(keys):
                 Cl['%s-%s' %(ki,kj)] = np.zeros((n_bins[i],n_bins[j], n_l))
 
-        z_interp_bias = np.linspace(0.001, 7, 1200)
-
-        b1_interp = si.interp1d(z_interp_bias, bias1, 'cubic', bounds_error = False, fill_value = 0.)
-        b2_interp = si.interp1d(z_interp_bias, bias2, 'cubic', bounds_error = False, fill_value = 0.)
-
-        chi = cosmo.comoving_distance(zz)
+        z_interp_bias = np.linspace(zmin, 10, 1200)
+        
 
         def H(x):
             return cosmo.H(x).value
         
         def r(x):
             return cosmo.comoving_distance(x).value
-        
-        def J1(tracer1, x):
-            if tracer1 == 'galaxy':
+
+            
+        def JJ(tracer, x):
+            if 'gal' in tracer:
                 return np.ones(len(x))
             else:
-                return (1+x)*const.c/H(x)+(cosmo.luminosity_distance(x).value/(1+x))
+                return (1+x)*const.c/H(x)+(cosmo.comoving_distance(x).value)
             
-        def J2(tracer2, x):
-            if tracer2 == 'galaxy':
-                return np.ones(len(x))
+        def A_L (chi, z, tracer, r_z1, bs, Hvals):
+            if 'gal' in tracer:
+                return 0.5 * (5*bs-2) * (r_z1 - chi) / chi
             else:
-                return (1+x)*const.c/H(x)+(cosmo.luminosity_distance(x).value/(1+x))
-            
-        def A_L_X (z, tracer1, r_z1):
-            chi = r(z)
-            if tracer1 == 'galaxy':
-                return 0.5 * (5*b1_interp(z)-2) * (chi - r_z1) / r_z1
-            else:
-                conf_H = H(z)/(1+z)
-                return 0.5 * (((chi - r_z1) / r_z1) * (b1_interp(z)+2) + (1/(1+chi*conf_H)))
-            
-        def A_L_Y (z, tracer2, r_z2):
-            chi = r(z)
-            if tracer2 == 'galaxy':
-                return 0.5 * (5*b2_interp(z)-2) * (chi - r_z2) / r_z2
-            else:
-                conf_H = H(z)/(1+z)
-                return 0.5 * (((chi - r_z2) / r_z2) * (b2_interp(z)+2) + (1/(1+chi*conf_H)))
+                conf_H = Hvals/(1+z)
+                return 0.5 * (((r_z1 - chi) / chi) * (bs-2) + (1/(1+r_z1*conf_H)))
 
 
         # 2) Load power spectra
         power_spectra = self.power_spectra_interpolator
-        PS_lz = np.zeros((n_l, n_z))
-        for il in xrange(n_l):
-            for iz in range(n_z):
-                PS_lz[il,iz] = power_spectra(l[il]/self.geometric_factor[iz], zz[iz])
+        
         # Add curvature correction (see arXiv:2302.04507)
         if self.cosmology.K != 0.:
             KK = self.cosmology.K
@@ -1078,81 +1165,185 @@ class limber():
                 factor[il]=(1-np.sign(KK)*ell**2/(((ell+0.5)/self.geometric_factor)**2+KK))**-0.5
             PS_lz *= factor
 
+        ############################################################################
+        def lensing_int(z1, z2, ll, bin_i, bin_j, WX_, WY_, tX, tY, 
+                        npoints=30, p=1, zmin=1e-04, grid='mix', show_plot=False):
 
-        def first_int(z1, z2, ll):
-            def inner_integrand(x):
-                P_s = []
-                for i in range(z2.shape[1]):
-                    z2_array = z2[:,i]
-                    P_s.append(power_spectra((ll+0.5) / r(z2_array), z2_array))
-                P_s = np.array(P_s)
-                return const.c * A_L_X(x, tracer1, r(z1)) * A_L_Y(x, tracer2, r(z2)) * (1 + x)**2 / H(x) * r(x)**2 * P_s
-            z_grid = np.linspace(0.001, z2, 20)
-            integrand_values = np.array(inner_integrand(z_grid))
-            return (1/r(z1))*(1/r(z2))*sint.simps(integrand_values, x=z_grid)
+            if grid=='mix':
+                x1 = np.linspace(zmin*(1+0.01), z2, npoints)
+                x2 = np.geomspace( zmin, z2*(1-0.01), npoints) 
+                x=np.zeros( (2*x1.shape[0], x1.shape[1], x1.shape[2]) )
+                for i in range(x1.shape[1]):
+                    for j in range(x1.shape[2]):
+                        x_ = np.sort( np.unique(np.concatenate([x1[:,i, j], x2[:,i, j] ] )))
+                        if len(x_)<len(x):
+                            n_ = len(x)-len(x_)
+                            x_ = np.sort( np.unique( np.concatenate( [x_ , np.linspace( zmin*(1+0.05), z2[i,j]*(1-0.05), n_) ] )))
+                        x[:, i,j ] = x_
+            elif grid=='lin':
+                x = np.linspace( zmin, z2, npoints)
+            elif grid=='geom':
+                # not recommended
+                x = np.geomspace( zmin, z2, npoints)
         
+            r1 = r(z1)
+            r2 = r(z2)
+            rx = r(x)
+            Hx = H(x)
 
-        def second_int(z1, ll, bin_j):
-            def integrand_second(x):
-                return first_int(z1, x, ll) * W_Y[bin_j] * J2(tracer2, x)
+            if 'gal' in tX:
+                b1 = si.interp1d(z_interp_bias, s_gal, 'cubic', bounds_error = False, fill_value = 0.)
+            else:
+                b1 = si.interp1d(z_interp_bias, beta, 'cubic', bounds_error = False, fill_value = 0.)
+
+            if 'gal' in tY:
+                b2 = si.interp1d(z_interp_bias, s_gal, 'cubic', bounds_error = False, fill_value = 0.)
+            else:
+                b2 = si.interp1d(z_interp_bias, beta, 'cubic', bounds_error = False, fill_value = 0.)
+
             
-            z_grid = np.linspace(0.001, z1, 20)
-            integrand_values = np.array(integrand_second(z_grid))
-            return sint.simps(integrand_values, x=z_grid)
+            t1 = np.transpose(const.c*A_L(rx, x, tX, r1, b1(x), Hx) * A_L( rx, x, tY, r2, b2(x), Hx) * (1 + x)**2 / Hx * rx**2, (1,2,0) )
+
+            if show_plot:
+                idx = 9
+    
+                plt.plot( z1, WX_)
+                plt.scatter( z1, WX_)
+                plt.plot( z2[:, idx], WY_[:, idx], ls='--')
+                plt.scatter( z2[:, idx], WY_[:, idx], ls='--')
+                plt.axvline(z1[idx])
+                plt.title( str(bin_i)+str(bin_j)+', '+tX+'-'+tY)
+                #plt.yscale('log')
+                plt.show()
+                plt.close()
+    
+                plt.plot( x[:, idx, idx], t1[idx, idx, :] )
+                plt.scatter( x[:, idx, idx], t1[idx, idx, :] )
+                plt.yscale('log')
+                plt.xscale('log')
+                plt.show()
+                plt.close()
+    
+                plt.plot(x[:, idx, idx], t1[idx, idx, :] )
+                plt.scatter(x[:, idx, idx], t1[idx, idx, :] )
+                #plt.yscale('log')
+                #plt.xscale('log')
+                plt.show()
+                plt.close()
+
+
+            PS_ = np.squeeze(np.asarray([[[ [ power_spectra(xx,yy) for xx, yy in zip((ll[l]+0.5) / rx[:,k,i], x[:,k,i]) ] for i in range(len(z1))] for k in range(len(z2))] for l in range(len(ll))] ))
+
+            
+            my_int = t1[None, :, :, :,]*PS_ 
+
+
+            I1_ = np.asarray( [[[ np.trapz( my_int[l, i2, i1], x=x[:, i2, i1], axis=0 ) for i1 in range(len(z1))] for i2 in range(len(z2))] for l in range(len(ll))])
         
-
-        def third_int(ll, bin_i, bin_j):
-            def integrand_third(x):
-                return second_int(x, ll, bin_j) * W_X[bin_i] * J1(tracer1, x)
             
-            integrand_values = np.array(integrand_third(zz))
-            return integrand_values
+            
+            if show_plot:
+                plt.plot(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.scatter(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.yscale('log')
+                plt.xscale('log')
+                plt.show()
+                plt.close()
+    
+                plt.plot(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.scatter(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.show()
+                plt.close()
+            
+            
+            I2_ = np.asarray( [[ np.trapz( WY_[:, i1] * JJ(tY, z2[:, i1])*I1_[l, :, i1]/r2[:, i1], x=z2[:, i1], axis=0 ) for i1 in range(len(z1))] for l in range(len(ll))])
 
 
+
+            I3_ =  np.trapz( WX_ * JJ(tX, z1)*I2_/r1, x=z1, axis=1 )
+            
+            return I3_
+
+
+        ############################################################################
         # 3) load Cls given the source functions
         # 1st key (from 1 to N_keys)
         for index_X in xrange(nkeys):
             key_X = list(keys)[index_X]
-            W_X = np.array([windows_to_use[key_X][i](zz) for i in range(n_bins[index_X])])
-            # 2nd key (from 1st key to N_keys)
-            for index_Y in xrange(index_X,nkeys):
-                key_Y = list(keys)[index_Y]
-                W_Y = np.array([windows_to_use[key_Y][i](zz) for i in range(n_bins[index_Y])])
-                # Symmetry C_{AA}^{ij} == C_{AA}^{ji}
-                if key_X == key_Y:
-                    for bin_i in xrange(n_bins[index_X]):
-                        for bin_j in xrange(bin_i, n_bins[index_Y]):
-                            for ell in range(n_l):
-                                integrand = third_int(l[ell], bin_i, bin_j)
-                                ll = l[ell]
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell] = ll**2*(ll+1)**2/((ll+0.5)**4)*sint.simps(integrand, x = zz)
-                                Cl['%s-%s' %(key_X,key_Y)][bin_j,bin_i,ell] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
-                # Symmetry C_{AB}^{ij} == C_{BA}^{ji}
+            
+            #################
+            # choose z grid in each bin so that it is denser around the peak
+            
+            bins_ = self.bin_edges[key_X]
+            bins_centers_ = (bins_[:-1] + bins_[1:]) / 2
+            zzs = []
+            ll_ = 0
+            for bin_i in xrange(n_bins[index_X]):
+                if 'gal' in key_X:
+                    maxz = 5 # check this
+                    npts = nhigh
                 else:
-                    for bin_i in xrange(n_bins[index_X]):
-                        for bin_j in xrange(n_bins[index_Y]):
-                            for ell in range(n_l):
-                                integrand = third_int(l[ell], bin_i, bin_j)
-                                ll = l[ell]
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = ll**2*(ll+1)**2/((ll+0.5)**4)*sint.simps(integrand, x = zz)
-                                Cl['%s-%s' %(key_Y,key_X)][bin_j,bin_i] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
+                    maxz = 10 # check this
+                    npts = 2*nhigh
+                if max(zmin, bins_[bin_i]*(1-5*Deltaz)-0.01)==zmin:
+                    n1 = npoints+nlow
+                else:
+                    n1 = npoints
+                if bin_i<n_bins[index_X]: 
+                    myarr = np.sort( np.unique(np.concatenate( [np.linspace( max(zmin, bins_[bin_i]*(1-5*Deltaz) ), bins_[bin_i+1]*(1+5*Deltaz), npoints ), np.linspace( zmin, max(zmin, bins_[bin_i]*(1-5*Deltaz)-0.01), nlow ), np.linspace( bins_[bin_i+1]*(1+0.05)+0.01, maxz, npts )] )))
+                else:
+                    myarr = np.sort( np.unique(np.concatenate( [np.linspace( max(zmin, bins_[bin_i]*(1-5*Deltaz) ), maxz, npoints+npts ), np.linspace( zmin, max(zmin, bins_[bin_i]*(1-5*Deltaz)-0.01), nlow )] )))
+                l_ = len(myarr)
+                if l_>ll_:
+                    ll_=l_
+                zzs.append( myarr )
+            
+            for i,a in enumerate(zzs):
+                #print('len %s: %s'%(i, len(a)))
+                if not len(a)==l_:
+                    n_ = l_-len(a)
+                    #print('adding %s'%n_)
+                    zzs[i] =  np.sort( np.unique(np.concatenate([zzs[i], np.linspace(zmin*(1+0.01), max(a)*(1-0.01), n_ ) ] )))
+                    #print('new len %s: %s'%(i, len(zzs[i])))
+            try:
+                zzs = np.asarray(zzs)
+            except Exception as e:
+                print(zzs)
+                print(zmax)  
+                print(e)
+                
+            
+            # now compute window functions
+            W_X = np.array([[windows_to_use[key_X][i,j](zzs[i]) for j in range(n_l)] for i in range(n_bins[index_X])])
+            
+            
+            # 2nd key (from 1st key to N_keys)
+            for index_Y in xrange(nkeys):
+                key_Y = list(keys)[index_Y]
+                     
+                # Symmetry C_{AA}^{ij} == C_{AA}^{ji}
+                # NOW THIS IS NOT TRUE FOR LENSING! 
+                for bin_i in xrange(n_bins[index_X]):
+                    myrange = xrange(n_bins[index_Y])
+                    for bin_j in myrange:
+                        if  (bin_j==bin_i): #and (key_Y==key_X):                      and ('gal' in key_Y) and (bin_j<=2)
+                            # print( 'computing %s %s %s %s'%(key_Y, key_X, bin_i, bin_j))
+                            # this could also made finer by adapting the grid. 
+                            # For now we leave as it is
+                            z2s_ = np.linspace(zmin, zzs[bin_i], npoints )
+                            W_Y = W_Y = np.array([[windows_to_use[key_Y][i,j](z2s_) for j in range(n_l)] for i in range(n_bins[index_Y])])
+                            WY = W_Y[bin_j, 0]
+                            WX = W_X[bin_i, 0]
+                            Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,:] = l**2*(l+1)**2/((l+0.5)**4)*lensing_int(zzs[bin_i], z2s_, l, bin_i, bin_j, WX, WY, key_X, key_Y, zmin=zmin, npoints=npoints_x, grid=grid_x)
+
         return Cl
+    
 
 
-
-    def limber_angular_power_spectra_lensing_cross(self, l, tracer1, tracer2, s_gal, beta, H_0, omega_m, omega_b, windows = None):
+    def limber_angular_power_spectra_lensing_cross(self, l,  s_gal, beta, H_0, omega_m, omega_b, windows = None, npoints=20, npoints_x=20, grid_x='mix', nlow=5, nhigh=5, Deltaz=0.05, zmin=1e-05):
 
         cosmo = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
 
-        if tracer1 == 'galaxy':
-            bias1 = s_gal
-        else:
-            bias1 = beta
-        
-        if tracer2 == 'galaxy':
-            bias2 = s_gal
-        else:
-            bias2 = beta
 
         # Check existence of power spectrum
         try: self.power_spectra_interpolator
@@ -1175,58 +1366,49 @@ class limber():
         keys   = windows_to_use.keys()
         if len(keys) == 0: raise AttributeError("No window function has been computed!")
         nkeys  = len(keys)
+        print('List of window functions used:')
+        print(keys)
         n_bins = [len(windows_to_use[key]) for key in keys]
-
+        print('N of bins for each case:')
+        print(n_bins)
+        
         # 1) Define lengths and quantities
-        zz       = self.z_integration
+        #zz       = self.z_integration
         n_l      = len(np.atleast_1d(l))
-        n_z      = self.nz_integration
-
-        zz = np.linspace(0.001, 7, 20)
-        n_z = 10
+        #n_z      = self.nz_integration # this is now npoints
 
         Cl       = {}
         for i,ki in enumerate(keys):
             for j,kj in enumerate(keys):
                 Cl['%s-%s' %(ki,kj)] = np.zeros((n_bins[i],n_bins[j], n_l))
 
-        z_interp_bias = np.linspace(0.001, 7, 1200)
-
-        b1_interp = si.interp1d(z_interp_bias, bias1, 'cubic', bounds_error = False, fill_value = 0.)
-        b2_interp = si.interp1d(z_interp_bias, bias2, 'cubic', bounds_error = False, fill_value = 0.)
-
-        chi = cosmo.comoving_distance(zz)
+        z_interp_bias = np.linspace(zmin, 10, 1200)
+        
 
         def H(x):
             return cosmo.H(x).value
         
         def r(x):
             return cosmo.comoving_distance(x).value
-        
-        def J1(tracer1, x):
-            return np.ones(len(x))
+
             
-        def J2(tracer2, x):
-            if tracer2 == 'galaxy':
-                return np.ones(len(x))
+        def JJ(tracer, x):
+            if 'gal' in tracer:
+                return np.ones_like(x)
             else:
-                return (1+x)*const.c/H(x)+(cosmo.luminosity_distance(x).value/(1+x))
+                return (1+x)*const.c/H(x)+(cosmo.comoving_distance(x).value)
             
-        def A_L_Y (z, tracer2, r_z2):
-            chi = r(z)
-            if tracer2 == 'galaxy':
-                return 0.5 * (5*b2_interp(z)-2) * (chi - r_z2) / r_z2
+        def A_L (chi, z, tracer, r_z1, bs, Hvals):
+            if 'gal' in tracer:
+                return 0.5 * (5*bs-2) * (r_z1 - chi) / chi
             else:
-                conf_H = H(z)/(1+z)
-                return 0.5 * (((chi - r_z2) / r_z2) * (b2_interp(z)+2) + (1/(1+chi*conf_H)))
+                conf_H = Hvals/(1+z)
+                return 0.5 * (((r_z1 - chi) / chi) * (bs-2) + (1/(1+r_z1*conf_H)))
 
 
         # 2) Load power spectra
         power_spectra = self.power_spectra_interpolator
-        PS_lz = np.zeros((n_l, n_z))
-        for il in xrange(n_l):
-            for iz in range(n_z):
-                PS_lz[il,iz] = power_spectra(l[il]/self.geometric_factor[iz], zz[iz])
+        
         # Add curvature correction (see arXiv:2302.04507)
         if self.cosmology.K != 0.:
             KK = self.cosmology.K
@@ -1235,57 +1417,158 @@ class limber():
                 factor[il]=(1-np.sign(KK)*ell**2/(((ell+0.5)/self.geometric_factor)**2+KK))**-0.5
             PS_lz *= factor
 
-
-        def first_int(z1, ll, bin_j):
-            def inner_integrand(x):
-                P_s = np.zeros_like(z_grid)
-                for i in range(len(x)):
-                    for j in range(len(x)):
-                        z1_array = z_grid[:,i]
-                        P_s[j,i]=power_spectra((ll+0.5) / r(z1_array[j]), z1_array[j])
-                return A_L_Y(x, tracer2, r(z1)) * W_Y[bin_j] * J2(tracer2, x) * (1 + x) * P_s
-            
-            z_grid = np.linspace(0.001, z1, 20)
-            integrand_values = np.array(inner_integrand(z_grid))
-            return (1/r(z1))*sint.simps(integrand_values, x=z_grid)
+        ############################################################################
+        def lensing_int(z1, z2, ll, bin_i, bin_j, WX_, WY_, tX, tY, 
+                        npoints=30, p=1, zmin=1e-04, grid='mix', show_plot=False):
         
+            r1 = r(z1)
+            r2 = r(z2)
+            Hx = H(z2)
 
-        def second_int(ll, bin_i, bin_j):
-            def integrand_second(x):
-                return first_int(x, ll, bin_j) * W_X[bin_i]*const.c/cosmo.H(zz)
+            if 'gal' in tX:
+                b1 = si.interp1d(z_interp_bias, s_gal, 'cubic', bounds_error = False, fill_value = 0.)
+            else:
+                b1 = si.interp1d(z_interp_bias, beta, 'cubic', bounds_error = False, fill_value = 0.)
 
-            integrand_values = np.array(integrand_second(zz))
-            return integrand_values
+            if 'gal' in tY:
+                b2 = si.interp1d(z_interp_bias, s_gal, 'cubic', bounds_error = False, fill_value = 0.)
+            else:
+                b2 = si.interp1d(z_interp_bias, beta, 'cubic', bounds_error = False, fill_value = 0.)
+            
+            t1 = np.transpose(A_L( r2, z2, tY, r1, b2(z2), Hx) * (1 + z2) * JJ(tY, z2), (1,0) )
+
+            if show_plot:
+                idx = 9
+    
+                plt.plot( z1, WX_)
+                plt.scatter( z1, WX_)
+                plt.plot( z2[:, idx], WY_[:, idx], ls='--')
+                plt.scatter( z2[:, idx], WY_[:, idx], ls='--')
+                plt.axvline(z1[idx])
+                plt.title( str(bin_i)+str(bin_j)+', '+tX+'-'+tY)
+                plt.yscale('log')
+                plt.show()
+                plt.close()
+
+                '''
+                plt.plot( x[:, idx, idx], t1[idx, idx, :] )
+                plt.scatter( x[:, idx, idx], t1[idx, idx, :] )
+                plt.yscale('log')
+                plt.xscale('log')
+                plt.show()
+                plt.close()
+    
+                plt.plot(x[:, idx, idx], t1[idx, idx, :] )
+                plt.scatter(x[:, idx, idx], t1[idx, idx, :] )
+                #plt.yscale('log')
+                #plt.xscale('log')
+                plt.show()
+                plt.close()
+                '''
+
+            PS_ = np.squeeze(np.asarray([[ [ power_spectra(xx,yy) for xx, yy in zip((ll[l]+0.5) / r2[:, i], z2[:, i]) ] for i in range(len(z1))] for l in range(len(ll))] ))
+
+            WY_ = np.transpose(WY_, (0,2,1))
+
+            my_int = t1[None, :, :,]*WY_*PS_ 
 
 
+            I1_ = np.asarray([[ np.trapz( my_int[l, i1], x=z2[:, i1], axis=0 ) for i1 in range(len(z1))] for l in range(len(ll))])
+        
+            
+            '''
+            if show_plot:
+                plt.plot(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.scatter(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.yscale('log')
+                plt.xscale('log')
+                plt.show()
+                plt.close()
+    
+                plt.plot(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.scatter(x[:, idx, idx], my_int[15, idx, idx, :] )
+                plt.show()
+                plt.close()
+            '''
+
+            I2_ =  np.trapz( WX_ * I1_/r1 * const.c / H(z1), x=z1, axis=1 )
+            
+            return I2_
+
+
+        ############################################################################
         # 3) load Cls given the source functions
         # 1st key (from 1 to N_keys)
         for index_X in xrange(nkeys):
             key_X = list(keys)[index_X]
-            W_X = np.array([windows_to_use[key_X][i](zz) for i in range(n_bins[index_X])])
-            # 2nd key (from 1st key to N_keys)
-            for index_Y in xrange(index_X,nkeys):
-                key_Y = list(keys)[index_Y]
-                W_Y = np.array([windows_to_use[key_Y][i](zz) for i in range(n_bins[index_Y])])
-                # Symmetry C_{AA}^{ij} == C_{AA}^{ji}
-                if key_X == key_Y:
-                    for bin_i in xrange(n_bins[index_X]):
-                        for bin_j in xrange(bin_i, n_bins[index_Y]):
-                            for ell in range(n_l):
-                                ll = l[ell]
-                                integrand = second_int(l[ell], bin_i, bin_j)
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell] = -ll*(ll+1)/((ll+0.5)**2)*sint.simps(integrand, x = zz)
-                                Cl['%s-%s' %(key_X,key_Y)][bin_j,bin_i,ell] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
-                # Symmetry C_{AB}^{ij} == C_{BA}^{ji}
+            
+            #################
+            # choose z grid in each bin so that it is denser around the peak
+            
+            bins_ = self.bin_edges[key_X]
+            bins_centers_ = (bins_[:-1] + bins_[1:]) / 2
+            zzs = []
+            ll_ = 0
+            for bin_i in xrange(n_bins[index_X]):
+                if 'gal' in key_X:
+                    maxz = 5 # check this
+                    npts = nhigh
                 else:
-                    for bin_i in xrange(n_bins[index_X]):
-                        for bin_j in xrange(n_bins[index_Y]):
-                            for ell in range(n_l):
-                                integrand = second_int(l[ell], bin_i, bin_j)
-                                ll = l[ell]
-                                Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j] = -ll*(ll+1)/((ll+0.5)**2)*sint.simps(integrand, x = zz)
-                                Cl['%s-%s' %(key_Y,key_X)][bin_j,bin_i] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,ell]
+                    maxz = 10 # check this
+                    npts = 2*nhigh
+                if max(zmin, bins_[bin_i]*(1-5*Deltaz)-0.01)==zmin:
+                    n1 = npoints+nlow
+                else:
+                    n1 = npoints
+                if bin_i<n_bins[index_X]: 
+                    myarr = np.sort( np.unique(np.concatenate( [np.linspace( max(zmin, bins_[bin_i]*(1-5*Deltaz) ), bins_[bin_i+1]*(1+5*Deltaz), npoints ), np.linspace( zmin, max(zmin, bins_[bin_i]*(1-5*Deltaz)-0.01), nlow ), np.linspace( bins_[bin_i+1]*(1+0.05)+0.01, maxz, npts )] )))
+                else:
+                    myarr = np.sort( np.unique(np.concatenate( [np.linspace( max(zmin, bins_[bin_i]*(1-5*Deltaz) ), maxz, npoints+npts ), np.linspace( zmin, max(zmin, bins_[bin_i]*(1-5*Deltaz)-0.01), nlow )] )))
+                l_ = len(myarr)
+                if l_>ll_:
+                    ll_=l_
+                zzs.append( myarr )
+            
+            for i,a in enumerate(zzs):
+                #print('len %s: %s'%(i, len(a)))
+                if not len(a)==l_:
+                    n_ = l_-len(a)
+                    #print('adding %s'%n_)
+                    zzs[i] =  np.sort( np.unique(np.concatenate([zzs[i], np.linspace(zmin*(1+0.01), max(a)*(1-0.01), n_ ) ] )))
+                    #print('new len %s: %s'%(i, len(zzs[i])))
+            try:
+                zzs = np.asarray(zzs)
+            except Exception as e:
+                print(zzs)
+                print(zmax)  
+                print(e)
+                
+            
+            # now compute window functions
+            W_X = np.array([[windows_to_use[key_X][i,j](zzs[i]) for j in range(n_l)] for i in range(n_bins[index_X])])
+            
+            # 2nd key (from 1st key to N_keys)
+            for index_Y in xrange(nkeys):
+                key_Y = list(keys)[index_Y]
+                     
+                # Symmetry C_{AA}^{ij} == C_{AA}^{ji}
+                # NOW THIS IS NOT TRUE FOR LENSING! 
+                for bin_i in xrange(n_bins[index_X]):
+                    myrange = xrange(n_bins[index_Y])
+                    for bin_j in myrange:
+                        if  (bin_j==bin_i): # and (key_Y==key_X): # and ('gal' in key_Y) and (bin_j<=2)
+                            # print( 'computing %s %s %s %s'%(key_Y, key_X, bin_i, bin_j))
+                            # this could also made finer by adapting the grid. 
+                            # For now we leave as it is
+                            z2s_ = np.linspace(zmin, zzs[bin_i], npoints )
+                            W_Y = np.array([[windows_to_use[key_Y][i,j](z2s_) for j in range(n_l)] for i in range(n_bins[index_Y])])
+
+                            WY = W_Y[bin_j]
+                            WX = W_X[bin_i]
+                            Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j,:] = l*(l+1)/((l+0.5)**2)*lensing_int(zzs[bin_i], z2s_, l, bin_i, bin_j, WX, WY, key_X, key_Y, zmin=zmin, npoints=npoints_x, grid=grid_x)
+
         return Cl
+
 
     #-----------------------------------------------------------------------------------------
     # CORRELATION FUNCTIONS
