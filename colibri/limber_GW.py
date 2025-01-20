@@ -1114,11 +1114,7 @@ class limber():
         keys   = windows_to_use.keys()
         if len(keys) == 0: raise AttributeError("No window function has been computed!")
         nkeys  = len(keys)
-        print('List of window functions used:')
-        print(keys)
         n_bins = [len(windows_to_use[key]) for key in keys]
-        print('N of bins for each case:')
-        print(n_bins)
         
         # 1) Define lengths and quantities
         #zz       = self.z_integration
@@ -1366,11 +1362,7 @@ class limber():
         keys   = windows_to_use.keys()
         if len(keys) == 0: raise AttributeError("No window function has been computed!")
         nkeys  = len(keys)
-        print('List of window functions used:')
-        print(keys)
         n_bins = [len(windows_to_use[key]) for key in keys]
-        print('N of bins for each case:')
-        print(n_bins)
         
         # 1) Define lengths and quantities
         #zz       = self.z_integration
