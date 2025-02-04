@@ -762,11 +762,16 @@ class limber():
     def load_lsd_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, name = 'LSD'):
         
         conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
-        
 
         ndl = np.array(ndl)
         z  = np.array(z)
         n_bins = len(ndl)
+
+        conf_H = conversion.H(z).value/(1+z)
+        r_conf_H = conversion.comoving_distance(z).value*conf_H
+        gamma = r_conf_H/(1+r_conf_H)
+
+        jj = ((1+z)*const.c/conversion.H(z).value+(conversion.luminosity_distance(z).value)/(1+z))
         
         norm_const = sint.simps(ndl, x = conversion.luminosity_distance(z).value, axis = 1)
         assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
@@ -788,7 +793,7 @@ class limber():
         for galaxy_bin in xrange(n_bins):
 
             nz_interp = si.interp1d(z, ndl[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
-            f_interp = si.interp1d(z, conversion.Om(z)**0.55,'cubic', bounds_error = False, fill_value = 0.)
+            f_interp = si.interp1d(z, conversion.Om(z)**0.55 * 2 * gamma * jj,'cubic', bounds_error = False, fill_value = 0.)
 
             def Wm1 (ll):
                 return Lm1(ll)*nz_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)
@@ -798,7 +803,7 @@ class limber():
                 return Lp1(ll)*nz_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)
 
 
-            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*((1+self.z_integration)*const.c/self.Hubble+(conversion.luminosity_distance(self.z_integration).value)/(1+self.z_integration))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
+            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
 
         self.window_function[name]=np.array(self.window_function[name])
 
