@@ -67,7 +67,7 @@ class limber():
         self.nz_min = int((self.z_max-self.z_min)/self.dz_min+1)
         #self.nz_integration = int((self.z_max - self.z_min)*self.nz_min + 2)
         
-        self.nz_integration = 100
+        self.nz_integration = 300
         
         self.z_integration  = np.linspace(self.z_min, self.z_max, self.nz_integration)
 
