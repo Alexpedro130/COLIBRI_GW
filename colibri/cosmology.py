@@ -128,7 +128,7 @@ class cosmo:
                  Omega_K      = 0.,
                  tau          = 0.06,
                  T_cmb        = 2.7255,
-                 M_nu         = [],
+                 M_nu         = 0.06,
                  N_nu         = 3,
                  N_eff        = 3.044,
                  M_wdm        = [],
