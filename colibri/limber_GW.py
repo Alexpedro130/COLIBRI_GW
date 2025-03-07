@@ -325,6 +325,260 @@ class limber():
         else:        return 1./np.abs(K)**0.5*np.sinh(np.abs(K)**0.5*chi_z) #Mpc/h
 
     #-----------------------------------------------------------------------------------------
+    # WINDOW FUNCTIONS IMPLEMENTATION
+    #-----------------------------------------------------------------------------------------
+        
+    #-----------------------------------------------------------------------------------------
+    # GRAVITATIONAL WAVES LENSING WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+    def load_gw_lensing_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, name = 'lensing_GW'):
+
+        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
+        
+        #LL=limber()
+        
+        z  = np.array(z)       
+        #ndl = np.array(ndl)
+        
+        n_bins = len(ndl)
+
+        dl_grid = conversion.luminosity_distance(z).value
+        
+        norm_const = sint.simps(ndl, x = dl_grid, axis = 1)
+        
+        constant = 3.*omega_m*(H_0/const.c)**2.
+        
+        # Initialize window
+        self.window_function[name]  = []
+        # Set windows
+        for galaxy_bin in xrange(n_bins):
+            # Select which is the function and which are the arguments
+            n_z_interp = si.interp1d(z, ndl[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.)
+            self.window_function[name].append(si.interp1d(self.z_integration, constant*n_z_interp(self.z_integration)/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
+
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
+
+    #-----------------------------------------------------------------------------------------
+    # GALAXY LENSING WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+
+    def load_galaxy_lensing_window_functions(self, z, nz, H_0, omega_m, ll, name = 'galaxy_lensing'):
+        constant = 3.*omega_m*(H_0/const.c)**2.
+        nz = np.array(nz)
+        z  = np.array(z)
+        n_bins = len(nz)
+        norm_const = sint.simps(nz, x = z, axis = 1)
+
+        self.window_function[name] = []
+        # Compute window
+        for galaxy_bin in xrange(n_bins):
+            tmp_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            self.window_function[name].append(si.interp1d(self.z_integration, constant*tmp_interp(self.z_integration)/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
+
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
+        
+        
+    #-----------------------------------------------------------------------------------------
+    # GALAXY CLUSTERING WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+    def load_galaxy_clustering_window_functions(self, z, nz, ll, bias = 1.0, name = 'galaxy'):
+        """
+        This function computes the window function for galaxy clustering given a galaxy distribution.
+        The function automatically normalizes the galaxy distribution such that the integral over
+        redshifts is 1.
+        The routine adds a key (specified in the ``name`` argument) to the ``self.window_function`` dictionary.
+        Given a galxy distruibution in a redshift bin :math:`n^{(i)}(z)`, the equation is:
+
+        .. math::
+
+           W^{(i)}_\mathrm{G}(z) = b(z) \ n^{(i)}(z) \\frac{H(z)}{c}
+
+
+        :param z: array or list of redshift at which the galaxy distribution ``nz`` is evaluated
+        :type z: 1-D array, default = None
+
+        :param nz: 2-D array or 2-D list where each sublist is the galaxy distribution of a given redshift bin
+        :type nz: 2-D array with shape ``(n_bins, len(z))``, default = None
+
+        :param bias: Galaxy bias.
+        :type bias: float or array, same length of ``nz``, default = 1
+
+        :param name: name of the key to add to the dictionary
+        :type name: string, default = 'galaxy'
+
+
+        An example call can be, for 3 bins all with a :func:`colibri.limber.limber.euclid_distribution` with default arguments for ``a`` and ``b`` but different bin edges ``zmin``, ``zmax``:
+
+        .. code-block:: python
+
+           bin_edges = [0.00, 0.72, 1.11, 5.00]
+           nbins     = len(bin_edges)-1
+           z_w       = np.linspace(0., 6., 1001)
+           nz_w      = [S.euclid_distribution(z = z_w, a = 2.0, b = 1.5, zmin = bin_edges[i], zmax = bin_edges[i+1]) for i in range(nbins)]
+           S.load_galaxy_clustering_window_functions(z = z_w, nz = nz_w, bias = 1)
+
+        :return: A key of a given name is added to the ``self.window_function`` dictionary
+
+        """
+        nz = np.array(nz)
+        z  = np.array(z)
+        n_bins = len(nz)
+        norm_const = sint.simps(nz, x = z, axis = 1)
+        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
+        assert nz.ndim == 2, "'nz' must be 2-dimensional" 
+        assert (nz.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
+        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
+        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
+
+        if   isinstance(bias, float): bias = bias*np.ones(n_bins)
+        elif isinstance(bias, int)  : bias = np.float(bias)*np.ones(n_bins)
+        else:                         assert len(bias)==n_bins, "Number of bias factors different from number of bins"
+        # Initialize window
+        self.window_function[name] = []
+        # Compute window
+        for galaxy_bin in xrange(n_bins):
+            tmp_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            #to_append = si.interp1d(self.z_integration, tmp_interp(self.z_integration)*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.)
+            self.window_function[name].append(si.interp1d(self.z_integration, tmp_interp(self.z_integration)*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
+            
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))          
+
+            
+    #-----------------------------------------------------------------------------------------
+    # GRAVITATIONAL WAVES CLUSTERING WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+    def load_gravitational_wave_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, bias = 1.0, name = 'GW'):
+        
+        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
+        
+
+        ndl = np.array(ndl)
+        z  = np.array(z)
+        n_bins = len(ndl)
+        
+        norm_const = sint.simps(ndl, x = conversion.luminosity_distance(z).value, axis = 1)
+        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
+        assert ndl.ndim == 2, "'nz' must be 2-dimensional" 
+        assert (ndl.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
+        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
+        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
+
+        if   isinstance(bias, float): bias = bias*np.ones(n_bins)
+        elif isinstance(bias, int)  : bias = np.float(bias)*np.ones(n_bins)
+        else:                         assert len(bias)==n_bins, "Number of bias factors different from number of bins"
+        # Initialize window
+        self.window_function[name] = []
+        # Compute window
+        for galaxy_bin in xrange(n_bins):
+            tmp_interp = si.interp1d(z,ndl[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            self.window_function[name].append(si.interp1d(self.z_integration, tmp_interp(self.z_integration)*((1+self.z_integration)*const.c/self.Hubble+(conversion.luminosity_distance(self.z_integration).value)/(1+self.z_integration))*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
+
+        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
+
+
+    #-----------------------------------------------------------------------------------------
+    # RSD WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+
+    def load_rsd_window_functions(self, z, nz, H_0, omega_m, omega_b, ll, name = 'RSD'):
+        
+        cosmo = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
+
+        nz = np.array(nz)
+        z  = np.array(z)
+        n_bins = len(nz)
+        norm_const = sint.simps(nz, x = z, axis = 1)
+        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
+        assert nz.ndim == 2, "'nz' must be 2-dimensional" 
+        assert (nz.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
+        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
+        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
+
+        def L0 (ll):
+            return (2*ll**2+2*ll-1)/((2*ll-1)*(2*ll+3))
+        def Lm1 (ll):
+            return -ll*(ll-1)/((2*ll-1)*np.sqrt((2*ll-3)*(2*ll+1)))
+        def Lp1 (ll):
+            return -(ll-1)*(ll+2)/((2*ll+3)*np.sqrt((2*ll+1)*(2*ll+5)))
+
+        # Initialize window
+        self.window_function[name] = []
+        # Compute window
+        for galaxy_bin in xrange(n_bins):
+
+            nz_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            f_interp = si.interp1d(z,cosmo.Om(z)**0.55,'cubic', bounds_error = False, fill_value = 0.)
+
+            def Wm1 (ll):
+                return Lm1(ll)*nz_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)
+            def Wz (ll):
+                return L0(ll)*nz_interp(((2*ll+1)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1)/(2*ll+1))*self.z_integration)
+            def Wp1 (ll):
+                return Lp1(ll)*nz_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)
+
+
+            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
+
+        self.window_function[name]=np.array(self.window_function[name])
+
+            
+    #-----------------------------------------------------------------------------------------
+    # LSD WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+    def load_lsd_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, name = 'LSD'):
+        
+        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
+
+        ndl = np.array(ndl)
+        z  = np.array(z)
+        n_bins = len(ndl)
+
+        conf_H = conversion.H(z).value/(1+z)
+        r_conf_H = conversion.comoving_distance(z).value*conf_H
+        gamma = r_conf_H/(1+r_conf_H)
+
+        jj = ((1+z)*const.c/conversion.H(z).value+(conversion.luminosity_distance(z).value)/(1+z))
+        
+        norm_const = sint.simps(ndl, x = conversion.luminosity_distance(z).value, axis = 1)
+        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
+        assert ndl.ndim == 2, "'nz' must be 2-dimensional" 
+        assert (ndl.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
+        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
+        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
+
+        def L0 (ll):
+            return (2*ll**2+2*ll-1)/((2*ll-1)*(2*ll+3))
+        def Lm1 (ll):
+            return -ll*(ll-1)/((2*ll-1)*np.sqrt((2*ll-3)*(2*ll+1)))
+        def Lp1 (ll):
+            return -(ll-1)*(ll+2)/((2*ll+3)*np.sqrt((2*ll+1)*(2*ll+5)))
+
+        # Initialize window
+        self.window_function[name] = []
+        # Compute window
+        for galaxy_bin in xrange(n_bins):
+
+            nz_interp = si.interp1d(z, ndl[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
+            f_interp = si.interp1d(z, conversion.Om(z)**0.55 * 2 * gamma * jj,'cubic', bounds_error = False, fill_value = 0.)
+
+            def Wm1 (ll):
+                return Lm1(ll)*nz_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)
+            def Wz (ll):
+                return L0(ll)*nz_interp(((2*ll+1)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1)/(2*ll+1))*self.z_integration)
+            def Wp1 (ll):
+                return Lp1(ll)*nz_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)
+
+
+            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
+
+        self.window_function[name]=np.array(self.window_function[name])
+        
+
+    #-----------------------------------------------------------------------------------------
+    # OTHER WINDOW FUNCTION
+    #-----------------------------------------------------------------------------------------
+
+    #-----------------------------------------------------------------------------------------
     # SHEAR WINDOW FUNCTION
     #-----------------------------------------------------------------------------------------
     def load_shear_window_functions(self, z, nz, name = 'shear'):
@@ -403,52 +657,6 @@ class limber():
                                                                                  fill_value=0.))
                 except ValueError: self.window_function[name].append(si.Akima1DInterpolator(self.z_windows,
                                                                                  window_function_tmp))
-                    
-# Define the gravitational waves lensing window function
-
-    def load_gw_lensing_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, name = 'lensing_GW'):
-
-        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
-        
-        #LL=limber()
-        
-        z  = np.array(z)       
-        #ndl = np.array(ndl)
-        
-        n_bins = len(ndl)
-
-        dl_grid = conversion.luminosity_distance(z).value
-        
-        norm_const = sint.simps(ndl, x = dl_grid, axis = 1)
-        
-        constant = 3.*omega_m*(H_0/const.c)**2.
-        
-        # Initialize window
-        self.window_function[name]  = []
-        # Set windows
-        for galaxy_bin in xrange(n_bins):
-            # Select which is the function and which are the arguments
-            n_z_interp = si.interp1d(z, ndl[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.)
-            self.window_function[name].append(si.interp1d(self.z_integration, constant*n_z_interp(self.z_integration)/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
-
-        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
-
-
-
-    def load_galaxy_lensing_window_functions(self, z, nz, H_0, omega_m, ll, name = 'galaxy_lensing'):
-        constant = 3.*omega_m*(H_0/const.c)**2.
-        nz = np.array(nz)
-        z  = np.array(z)
-        n_bins = len(nz)
-        norm_const = sint.simps(nz, x = z, axis = 1)
-
-        self.window_function[name] = []
-        # Compute window
-        for galaxy_bin in xrange(n_bins):
-            tmp_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
-            self.window_function[name].append(si.interp1d(self.z_integration, constant*tmp_interp(self.z_integration)/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
-
-        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
 
                     
     def load_shear_window_functions_flat(self, z, nz, name = 'shear'):
@@ -609,203 +817,7 @@ class limber():
         del self.window_function['shear_temporary_for_lensing']
         del self.window_function['IA_temporary_for_lensing']
 
-    #-----------------------------------------------------------------------------------------
-    # GALAXY CLUSTERING WINDOW FUNCTION
-    #-----------------------------------------------------------------------------------------
-    def load_galaxy_clustering_window_functions(self, z, nz, ll, bias = 1.0, name = 'galaxy'):
-        """
-        This function computes the window function for galaxy clustering given a galaxy distribution.
-        The function automatically normalizes the galaxy distribution such that the integral over
-        redshifts is 1.
-        The routine adds a key (specified in the ``name`` argument) to the ``self.window_function`` dictionary.
-        Given a galxy distruibution in a redshift bin :math:`n^{(i)}(z)`, the equation is:
 
-        .. math::
-
-           W^{(i)}_\mathrm{G}(z) = b(z) \ n^{(i)}(z) \\frac{H(z)}{c}
-
-
-        :param z: array or list of redshift at which the galaxy distribution ``nz`` is evaluated
-        :type z: 1-D array, default = None
-
-        :param nz: 2-D array or 2-D list where each sublist is the galaxy distribution of a given redshift bin
-        :type nz: 2-D array with shape ``(n_bins, len(z))``, default = None
-
-        :param bias: Galaxy bias.
-        :type bias: float or array, same length of ``nz``, default = 1
-
-        :param name: name of the key to add to the dictionary
-        :type name: string, default = 'galaxy'
-
-
-        An example call can be, for 3 bins all with a :func:`colibri.limber.limber.euclid_distribution` with default arguments for ``a`` and ``b`` but different bin edges ``zmin``, ``zmax``:
-
-        .. code-block:: python
-
-           bin_edges = [0.00, 0.72, 1.11, 5.00]
-           nbins     = len(bin_edges)-1
-           z_w       = np.linspace(0., 6., 1001)
-           nz_w      = [S.euclid_distribution(z = z_w, a = 2.0, b = 1.5, zmin = bin_edges[i], zmax = bin_edges[i+1]) for i in range(nbins)]
-           S.load_galaxy_clustering_window_functions(z = z_w, nz = nz_w, bias = 1)
-
-        :return: A key of a given name is added to the ``self.window_function`` dictionary
-
-        """
-        nz = np.array(nz)
-        z  = np.array(z)
-        n_bins = len(nz)
-        norm_const = sint.simps(nz, x = z, axis = 1)
-        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
-        assert nz.ndim == 2, "'nz' must be 2-dimensional" 
-        assert (nz.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
-        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
-        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
-
-        if   isinstance(bias, float): bias = bias*np.ones(n_bins)
-        elif isinstance(bias, int)  : bias = np.float(bias)*np.ones(n_bins)
-        else:                         assert len(bias)==n_bins, "Number of bias factors different from number of bins"
-        # Initialize window
-        self.window_function[name] = []
-        # Compute window
-        for galaxy_bin in xrange(n_bins):
-            tmp_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
-            #to_append = si.interp1d(self.z_integration, tmp_interp(self.z_integration)*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.)
-            self.window_function[name].append(si.interp1d(self.z_integration, tmp_interp(self.z_integration)*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
-            
-        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))          
-
-            
-    #-----------------------------------------------------------------------------------------
-    # GRAVITATIONAL WAVES WINDOW FUNCTION
-    #-----------------------------------------------------------------------------------------
-    def load_gravitational_wave_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, bias = 1.0, name = 'GW'):
-        
-        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
-        
-
-        ndl = np.array(ndl)
-        z  = np.array(z)
-        n_bins = len(ndl)
-        
-        norm_const = sint.simps(ndl, x = conversion.luminosity_distance(z).value, axis = 1)
-        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
-        assert ndl.ndim == 2, "'nz' must be 2-dimensional" 
-        assert (ndl.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
-        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
-        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
-
-        if   isinstance(bias, float): bias = bias*np.ones(n_bins)
-        elif isinstance(bias, int)  : bias = np.float(bias)*np.ones(n_bins)
-        else:                         assert len(bias)==n_bins, "Number of bias factors different from number of bins"
-        # Initialize window
-        self.window_function[name] = []
-        # Compute window
-        for galaxy_bin in xrange(n_bins):
-            tmp_interp = si.interp1d(z,ndl[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
-            self.window_function[name].append(si.interp1d(self.z_integration, tmp_interp(self.z_integration)*((1+self.z_integration)*const.c/self.Hubble+(conversion.luminosity_distance(self.z_integration).value)/(1+self.z_integration))*self.Hubble/const.c/norm_const[galaxy_bin]*bias[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.))
-
-        self.window_function[name]=np.tile(np.array(self.window_function[name]).reshape(-1,1), (1,len(ll)))
-
-
-    #-----------------------------------------------------------------------------------------
-    # RSD WINDOW FUNCTION
-    #-----------------------------------------------------------------------------------------
-
-    def load_rsd_window_functions(self, z, nz, H_0, omega_m, omega_b, ll, name = 'RSD'):
-        
-        cosmo = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
-
-        nz = np.array(nz)
-        z  = np.array(z)
-        n_bins = len(nz)
-        norm_const = sint.simps(nz, x = z, axis = 1)
-        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
-        assert nz.ndim == 2, "'nz' must be 2-dimensional" 
-        assert (nz.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
-        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
-        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
-
-        def L0 (ll):
-            return (2*ll**2+2*ll-1)/((2*ll-1)*(2*ll+3))
-        def Lm1 (ll):
-            return -ll*(ll-1)/((2*ll-1)*np.sqrt((2*ll-3)*(2*ll+1)))
-        def Lp1 (ll):
-            return -(ll-1)*(ll+2)/((2*ll+3)*np.sqrt((2*ll+1)*(2*ll+5)))
-
-        # Initialize window
-        self.window_function[name] = []
-        # Compute window
-        for galaxy_bin in xrange(n_bins):
-
-            nz_interp = si.interp1d(z,nz[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
-            f_interp = si.interp1d(z,cosmo.Om(z)**0.55,'cubic', bounds_error = False, fill_value = 0.)
-
-            def Wm1 (ll):
-                return Lm1(ll)*nz_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)
-            def Wz (ll):
-                return L0(ll)*nz_interp(((2*ll+1)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1)/(2*ll+1))*self.z_integration)
-            def Wp1 (ll):
-                return Lp1(ll)*nz_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)
-
-
-            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
-
-        self.window_function[name]=np.array(self.window_function[name])
-
-        
-
-
-            
-    #-----------------------------------------------------------------------------------------
-    # LSD WINDOW FUNCTION
-    #-----------------------------------------------------------------------------------------
-    def load_lsd_window_functions(self, z, ndl, H_0, omega_m, omega_b, ll, name = 'LSD'):
-        
-        conversion = FlatLambdaCDM(H0=H_0, Om0=omega_m, Ob0=omega_b)
-
-        ndl = np.array(ndl)
-        z  = np.array(z)
-        n_bins = len(ndl)
-
-        conf_H = conversion.H(z).value/(1+z)
-        r_conf_H = conversion.comoving_distance(z).value*conf_H
-        gamma = r_conf_H/(1+r_conf_H)
-
-        jj = ((1+z)*const.c/conversion.H(z).value+(conversion.luminosity_distance(z).value)/(1+z))
-        
-        norm_const = sint.simps(ndl, x = conversion.luminosity_distance(z).value, axis = 1)
-        assert np.all(np.diff(z)<self.dz_windows), "For convergence reasons, the distribution function arrays must be sampled with frequency of at least dz<=%.3f" %(self.dz_windows)
-        assert ndl.ndim == 2, "'nz' must be 2-dimensional" 
-        assert (ndl.shape)[1] == z.shape[0], "Length of each 'nz[i]' must be the same of 'z'"
-        assert z.min() <= self.z_min, "Minimum input redshift must be < %.3f, the minimum redshift of integration" %(self.z_min)
-        assert z.max() >= self.z_max, "Maximum input redshift must be > %.3f, the maximum redshift of integration" %(self.z_max)
-
-        def L0 (ll):
-            return (2*ll**2+2*ll-1)/((2*ll-1)*(2*ll+3))
-        def Lm1 (ll):
-            return -ll*(ll-1)/((2*ll-1)*np.sqrt((2*ll-3)*(2*ll+1)))
-        def Lp1 (ll):
-            return -(ll-1)*(ll+2)/((2*ll+3)*np.sqrt((2*ll+1)*(2*ll+5)))
-
-        # Initialize window
-        self.window_function[name] = []
-        # Compute window
-        for galaxy_bin in xrange(n_bins):
-
-            nz_interp = si.interp1d(z, ndl[galaxy_bin],'cubic', bounds_error = False, fill_value = 0.)
-            f_interp = si.interp1d(z, conversion.Om(z)**0.55 * 2 * gamma * jj,'cubic', bounds_error = False, fill_value = 0.)
-
-            def Wm1 (ll):
-                return Lm1(ll)*nz_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1-4)/(2*ll+1))*self.z_integration)
-            def Wz (ll):
-                return L0(ll)*nz_interp(((2*ll+1)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1)/(2*ll+1))*self.z_integration)
-            def Wp1 (ll):
-                return Lp1(ll)*nz_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)*f_interp(((2*ll+1+4)/(2*ll+1))*self.z_integration)
-
-
-            self.window_function[name].append([si.interp1d(self.z_integration, (Wm1(l)+Wz(l)+Wp1(l))*self.Hubble/const.c/norm_const[galaxy_bin], 'cubic', bounds_error = False, fill_value = 0.) for l in ll])
-
-        self.window_function[name]=np.array(self.window_function[name])
 
     #-----------------------------------------------------------------------------------------
     # HI WINDOW FUNCTION
@@ -1092,6 +1104,9 @@ class limber():
                             Cl['%s-%s' %(key_Y,key_X)][bin_j,bin_i] = Cl['%s-%s' %(key_X,key_Y)][bin_i,bin_j]
         return Cl
     
+    #-----------------------------------------------------------------------------------------
+    # ANGULAR POWER SPECTRA AUTO CORRELATION LENSING
+    #-----------------------------------------------------------------------------------------   
 
     def limber_angular_power_spectra_lensing_auto(self, l,  s_gal, beta, H_0, omega_m, omega_b, windows = None, npoints=20, npoints_x=20, grid_x='mix', nlow=5, nhigh=5, Deltaz=0.05, zmin=1e-05):
 
@@ -1339,6 +1354,10 @@ class limber():
 
         return Cl
     
+
+    #-----------------------------------------------------------------------------------------
+    # ANGULAR POWER SPECTRA CROSS CORRELATION WITH LENSING
+    #-----------------------------------------------------------------------------------------  
 
 
     def limber_angular_power_spectra_lensing_cross(self, l,  s_gal, beta, H_0, omega_m, omega_b, windows = None, npoints=20, npoints_x=20, grid_x='mix', nlow=5, nhigh=5, Deltaz=0.05, zmin=1e-05):
